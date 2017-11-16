@@ -74,7 +74,17 @@ private:
 	UPROPERTY()
 		UInventory* inventory;
 
-	FTimerHandle AttackTimer;
+	FTimerHandle ActionTimer;
+
+public:
+	ARPGCharacter();
+	UFUNCTION(BlueprintCallable, Category = "Action")
+		UCharacterAction* GetActionByType(EActionType type);
+
+	FActionInterrupted OnInterrupt;
+
+	UFUNCTION(BlueprintCallable, Category = "Action")
+		float GetShortestWeaponRange();
 
 	UFUNCTION(BlueprintCallable, Category = "Action")
 		const bool CanPerformAction(EActionType type);
@@ -84,16 +94,6 @@ private:
 
 	UFUNCTION(BlueprintCallable, Category = "Action")
 		void AddAction(UCharacterAction* newAction);
-
-	UFUNCTION(BlueprintCallable, Category = "Action")
-		UCharacterAction* GetActionByType(EActionType type);
-public:
-	ARPGCharacter();
-
-	FActionInterrupted OnInterrupt;
-
-	UFUNCTION(BlueprintCallable, Category = "Action")
-	float GetShortestWeaponRange();
 
 	UFUNCTION(BlueprintCallable, Category = "Action")
 		virtual void AttackStart(ARPGCharacter* target);
@@ -164,6 +164,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Dodge")
 		virtual void Dodge();
 
+	void PerformAction(EActionType type, float duration);
 	FHitResult GetTraceToTarget(ARPGCharacter* character);
 
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
@@ -195,6 +196,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Attack")
 		void Attack();
+	bool CanBlock();
 protected:
 	virtual void BeginPlay();
 
@@ -225,4 +227,5 @@ protected:
 	// End of APawn interface
 public:
 	virtual void InterruptAction(EActionType interruptCause, ARPGCharacter* interrupter);
+	bool CanParry();
 };

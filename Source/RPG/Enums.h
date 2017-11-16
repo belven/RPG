@@ -6,7 +6,8 @@ enum class EActionType : uint8
 	Parry,
 	Attack,
 	Block,
-	Dodge
+	Dodge,
+	Stagger
 };
 
 UENUM(BlueprintType)

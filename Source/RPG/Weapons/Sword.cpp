@@ -23,6 +23,7 @@ ASword* ASword::CreateSword(class ARPGCharacter* owner, float newHealthChange, f
 	sword->SetAttackSpeed(attackSpeed);
 	sword->SetItemOwner(owner);
 
+	//sword->GetMeshComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	return sword;
 }
 

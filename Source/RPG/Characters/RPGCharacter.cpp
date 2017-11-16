@@ -20,6 +20,8 @@
 #include "Array.h"
 #include "Items/Item.h"
 #include "RPG.h"
+#include "Actions/StaggerAction.h"
+#include "LogMacros.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogFPChar, Warning, All);
 
@@ -29,9 +31,8 @@ ARPGCharacter::ARPGCharacter()
 	SetCurrentHealth(GetMaxHealth());
 
 	// Set size for collision capsule
-	//GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
-
-	GetCapsuleComponent()->InitCapsuleSize(0, 0);
+	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
+	SetRootComponent(GetCapsuleComponent());
 
 	// set our turn rates for input
 	BaseTurnRate = 45.f;
@@ -40,20 +41,20 @@ ARPGCharacter::ARPGCharacter()
 	rollDistance = 400;
 	rollVelocity = 300;
 
-
 	SetCharacterMesh(CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P")));
 	GetCharacterMesh()->bCastDynamicShadow = false;
-	GetCharacterMesh()->CastShadow = false;
-	GetCharacterMesh()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCharacterMesh()->CastShadow = true;
+	GetCharacterMesh()->SetupAttachment(GetCapsuleComponent());
+	GetCharacterMesh()->SetRelativeLocation(FVector(0, 0, -90));
+	GetCharacterMesh()->SetRelativeRotation(FRotator(0, -90, 0));
+
 
 	// Create a CameraComponent	
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	FirstPersonCameraComponent->SetupAttachment(GetCharacterMesh());
-	FirstPersonCameraComponent->RelativeLocation = FVector(0.4F, 42.0F, 174.0F);
-	FirstPersonCameraComponent->RelativeRotation = FRotator(0.F, 0.F, 90.0F);
+	FirstPersonCameraComponent->RelativeLocation = FVector(0.0F, -150.0F, 200.0F);
+	FirstPersonCameraComponent->RelativeRotation = FRotator(-90, 0, 0);
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
-
-	SetRootComponent(GetCharacterMesh());
 
 	FP_MuzzleLocation = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzleLocation"));
 	FP_MuzzleLocation->SetupAttachment(FP_Gun);
@@ -68,7 +69,8 @@ ARPGCharacter::ARPGCharacter()
 	{
 		healthBarWidgetClass = healthBarWidget.Class;
 		SetHealthBarComponent(CreateDefaultSubobject<UWidgetComponent>(TEXT("Health Bar Component")));
-		GetHealthBarComponent()->AttachToComponent(GetRootComponent(), FAttachmentTransformRules(EAttachmentRule::KeepRelative, false));
+		GetHealthBarComponent()->SetupAttachment(RootComponent);
+		GetHealthBarComponent()->SetOwnerNoSee(true);
 	}
 }
 
@@ -97,13 +99,8 @@ void ARPGCharacter::AttackStart(ARPGCharacter* target)
 {
 	if (CanPerformAction(EActionType::Attack) && GetEquipedWeapons().Num() > 0)
 	{
-		ClearActions();
-		UAttackAction* attackAction = UAttackAction::CreateAttackAction();
-		attackAction->SetTarget(target);
-		attackAction->SetWeaponsUsed(equipedWeapons);
-
-		AddAction(attackAction);
-		GetWorld()->GetTimerManager().SetTimer(AttackTimer, this, &ARPGCharacter::AttackEnd, attackAction->GetDuration(), true);
+		GetCharacterMovement()->StopMovementImmediately();
+		PerformAction(EActionType::Attack, 1.0);
 	}
 }
 
@@ -131,7 +128,7 @@ void ARPGCharacter::AttackEnd()
 void ARPGCharacter::Landed(const FHitResult& Hit)
 {
 	ACharacter::Landed(Hit);
-	ClearActions();
+	//ClearActions();
 }
 
 void ARPGCharacter::Jump()
@@ -182,7 +179,7 @@ void ARPGCharacter::Attack()
 	FHitResult hit = FHitResult();
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
-	
+
 	//params.TraceTag = TraceTag;
 
 	FVector distance = GetActorForwardVector() * GetShortestWeaponRange();
@@ -194,6 +191,12 @@ void ARPGCharacter::Attack()
 		ARPGCharacter* character = Cast<ARPGCharacter>(hit.GetActor());
 		AttackStart(character);
 	}
+}
+
+bool ARPGCharacter::CanBlock()
+{
+	// TODO
+	return false;
 }
 
 void ARPGCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
@@ -225,10 +228,8 @@ void ARPGCharacter::Parry()
 {
 	if (CanPerformAction(EActionType::Parry))
 	{
-		ClearActions();
-		UParryAction* parryAction = UParryAction::CreateParryAction();
-		AddAction(parryAction);
-		GetWorld()->GetTimerManager().SetTimer(AttackTimer, this, &ARPGCharacter::ClearActions, parryAction->GetDuration(), true);
+		PerformAction(EActionType::Parry, 1.0);
+		UE_LOG(CombatLog, Log, TEXT("%s used parry"), *this->GetName());
 	}
 }
 
@@ -281,17 +282,26 @@ float ARPGCharacter::TakeDamage(float Damage, struct FDamageEvent const& DamageE
 
 		if (character)
 		{
+			ClearActions();
 			character->InterruptAction(EActionType::Parry, this);
 			FDamageEvent damageEvent;
-			character->TakeDamage(10, damageEvent, GetController(), this);
+			UE_LOG(CombatLog, Log, TEXT("%s parried %s"), *this->GetName(), *character->GetName());
 		}
 	}
 	else if (!IsDodging())
 	{
 		if (IsPerformingAction(EActionType::Block))
 		{
+			Damage *= 0.5;
 		}
+		else if (IsPerformingAction(EActionType::Stagger))
+		{
+			Damage *= 2;
+		}
+
 		currentHealth -= Damage;
+
+		UE_LOG(CombatLog, Log, TEXT("%s dealt %d damage to %s"), *DamageCauser->GetName(), Damage, *this->GetName());
 
 		if (currentHealth <= 0)
 		{
@@ -338,13 +348,11 @@ void ARPGCharacter::Dodge()
 	{
 		if (CanPerformAction(EActionType::Dodge))
 		{
-			ClearActions();
-			UDodgeAction* createDodgeAction = UDodgeAction::CreateDodgeAction();
-			AddAction(createDodgeAction);
+			PerformAction(EActionType::Dodge, 1.0);
 
 			FVector direction;
 
-			GetMovementComponent()->StopActiveMovement();
+			GetMovementComponent()->StopMovementImmediately();
 
 			if (GetVelocity().Size() < 10)
 			{
@@ -357,8 +365,48 @@ void ARPGCharacter::Dodge()
 
 			LaunchCharacter(direction, false, false);
 
-			GetWorld()->GetTimerManager().SetTimer(AttackTimer, this, &ARPGCharacter::ClearActions, createDodgeAction->GetDuration(), true);
+
 		}
+	}
+}
+
+void ARPGCharacter::PerformAction(EActionType type, float duration)
+{
+	ClearActions();
+
+	switch (type)
+	{
+	case EActionType::Attack:
+		UAttackAction* attackAction = UAttackAction::CreateAttackAction();
+		//attackAction->SetTarget(target);
+		attackAction->SetWeaponsUsed(equipedWeapons);
+		AddAction(attackAction);
+		GetWorld()->GetTimerManager().SetTimer(ActionTimer, this, &ARPGCharacter::AttackEnd, attackAction->GetDuration(), true);
+		GetWorld()->GetTimerManager().SetTimer(ActionTimer, this, &ARPGCharacter::ClearActions, attackAction->GetDuration(), true);
+		break;
+	case EActionType::Dodge:
+		UDodgeAction* dodgeAction = UDodgeAction::CreateDodgeAction();
+		AddAction(dodgeAction);
+		GetWorld()->GetTimerManager().SetTimer(ActionTimer, this, &ARPGCharacter::ClearActions, dodgeAction->GetDuration(), true);
+		break;
+	case EActionType::Block:
+		UBlockAction* blockAction = UBlockAction::CreateBlockAction();
+		AddAction(blockAction);
+		GetWorld()->GetTimerManager().SetTimer(ActionTimer, this, &ARPGCharacter::ClearActions, blockAction->GetDuration(), true);
+		break;
+	case EActionType::Parry:
+		UParryAction* parryAction = UParryAction::CreateParryAction();
+		parryAction->SetDuration(duration);
+		AddAction(parryAction);
+		GetWorld()->GetTimerManager().SetTimer(ActionTimer, this, &ARPGCharacter::ClearActions, parryAction->GetDuration(), true);
+		break;
+	case EActionType::Stagger:
+		UStaggerAction* stagger = UStaggerAction::CreateStaggerAction();
+		AddAction(stagger);
+		GetWorld()->GetTimerManager().ClearTimer(ActionTimer);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -370,7 +418,7 @@ void ARPGCharacter::CreateWidgets()
 	GetHealthBarComponent()->SetDrawSize(FVector2D(100, 20));
 
 	FTransform trans;
-	trans.SetLocation(FVector(0.0, 8.0, 130.0));
+	trans.SetLocation(FVector(0.0, 8.0, 100.0));
 
 	GetHealthBarComponent()->SetRelativeTransform(trans);
 
@@ -386,10 +434,24 @@ void ARPGCharacter::InterruptAction(EActionType interruptCause, ARPGCharacter* i
 {
 	if (IsPerformingAction(EActionType::Attack))
 	{
-		ClearActions();
-		GetWorld()->GetTimerManager().ClearTimer(AttackTimer);
+		GetMovementComponent()->StopMovementImmediately();
+
+		float duration = 1.0F;
+
+		if (interruptCause == EActionType::Parry)
+		{
+			duration = 2.0F;
+		}
+
+		PerformAction(EActionType::Stagger, duration);
 		OnInterrupt.Broadcast(interruptCause, interrupter);
 	}
+}
+
+bool ARPGCharacter::CanParry()
+{
+	// TODO
+	return false;
 }
 
 const bool ARPGCharacter::CanPerformAction(EActionType type)
@@ -429,6 +491,7 @@ void ARPGCharacter::ClearActions()
 		prieviousActions.Add(action);
 	}
 	GetCurrentActions().Empty();
+	UE_LOG(CombatLog, Log, TEXT("%s actions ready"), *this->GetName());
 }
 
 void ARPGCharacter::AddAction(UCharacterAction* newAction)

@@ -7,14 +7,12 @@
 
 void AEquipable::Equip()
 {
-	if (GetItemOwner() != nullptr && GetItemOwner()->GetMesh() != nullptr)
+	if (GetItemOwner() != nullptr && GetItemOwner()->GetCharacterMesh() != nullptr)
 	{
 		AttachToComponent(GetItemOwner()->GetCharacterMesh(), FAttachmentTransformRules(EAttachmentRule::SnapToTarget, false), "RightHand");
+		SetActorHiddenInGame(false);
+		SetEquipped(true);
 	}
-
-	SetActorHiddenInGame(false);
-
-	SetEquipped(true);
 }
 
 void AEquipable::Unequip()

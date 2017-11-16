@@ -17,3 +17,5 @@
 #define GetRandomPercent rand() % 100
 #define IsSuccess(chance) GetRandomPercent <= chance
 #define IsCrit(critChance) IsSuccess(critChance)
+
+DECLARE_LOG_CATEGORY_EXTERN(CombatLog, Log, All);

@@ -13,7 +13,11 @@ UCLASS()
 class RPG_API UStaggerAction : public UCharacterAction
 {
 	GENERATED_BODY()
-	
+public:
+	UStaggerAction();
+
+	UFUNCTION(BlueprintCallable, Category = "Action")
+		static UStaggerAction* CreateStaggerAction();
 	
 	
 	
